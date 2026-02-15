@@ -649,13 +649,13 @@ export default function PitchShapeVisualizer() {
                       {/* Fixed yellow label - bottom left */}
                       <rect x={rpPadding + 5} y={rpPlotSize - rpPadding - 52} width={115} height={20} fill="#EAB308" rx={3} />
                       <text x={rpPadding + 62} y={rpPlotSize - rpPadding - 38} fill="#000" fontSize="11" fontWeight="600" textAnchor="middle">
-                        Avg Release: {avgRelHt.toFixed(1)}
+                        Release: {avgRelHt.toFixed(1)}
                       </text>
                       
                       {/* Extension banner below */}
                       <rect x={rpPadding + 5} y={rpPlotSize - rpPadding - 28} width={115} height={20} fill="#EAB308" rx={3} />
                       <text x={rpPadding + 62} y={rpPlotSize - rpPadding - 14} fill="#000" fontSize="11" fontWeight="600" textAnchor="middle">
-                        Avg Ext: {avgExtension.toFixed(1)}
+                        Extension: {avgExtension.toFixed(1)}
                       </text>
                       
                       {/* X-axis labels */}
@@ -729,7 +729,7 @@ export default function PitchShapeVisualizer() {
                           <td>{pitch.spin != null ? roundSpin(pitch.spin) : '-'}</td>
                           <td>{formatDecimal(pitch.iVB, 1)}</td>
                           <td>{formatDecimal(pitch.horzBrk, 1)}</td>
-                          <td>{formatDecimal(pitch.vaa, 2)}</td>
+                          <td>{formatDecimal(pitch.vaa, 1)}</td>
                           <td>{formatPercent(pitch.strikePercent)}</td>
                           <td>{formatPercent(pitch.zonePercent)}</td>
                           <td>{formatPercent(pitch.swgStrkPercent)}</td>
