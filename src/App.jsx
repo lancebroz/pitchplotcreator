@@ -144,7 +144,7 @@ export default function PitchShapeVisualizer() {
     
     const html2canvas = (await import('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.esm.min.js')).default;
     const canvas = await html2canvas(contentRef.current, {
-      backgroundColor: '#0f1419',
+      backgroundColor: darkMode ? '#0f1419' : '#f5f5f5',
       scale: 2
     });
     
