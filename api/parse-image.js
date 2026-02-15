@@ -48,18 +48,24 @@ export default async function handler(req, res) {
 
 IMPORTANT: Read the column headers from LEFT to RIGHT carefully. The table has many percentage columns that look similar - pay close attention to the EXACT header name for each column.
 
+CRITICAL - NEGATIVE NUMBERS: Many values in this table are NEGATIVE (have a minus sign). You MUST preserve the negative sign for these values:
+- iVB can be negative (e.g., -1.1, -14.4)
+- HorzBrk can be negative (e.g., -3.7, -14.2, -7.7)
+- VertApprAngle is usually negative (e.g., -4.80, -6.59, -8.05)
+DO NOT drop the minus signs! A value of -3.7 is very different from 3.7.
+
 For each pitch type row that has numeric iVB and HorzBrk values, extract:
 
 1. "pitchType": The pitch name (first column)
 2. "usage": P% value as decimal (e.g., 56.2% becomes 0.562)
 3. "velocity": Vel column value
 4. "spin": Spin column value  
-5. "iVB": iVB column value
-6. "horzBrk": HorzBrk column value
+5. "iVB": iVB column value (CAN BE NEGATIVE - preserve the minus sign!)
+6. "horzBrk": HorzBrk column value (CAN BE NEGATIVE - preserve the minus sign!)
 7. "extension": Extension column value
 8. "relHt": Rel Ht column value
 9. "relSide": RelSide column value
-10. "vaa": VertApprAngle column value (negative number like -4.80)
+10. "vaa": VertApprAngle column value (usually negative like -4.80)
 11. "strikePercent": Strike% column (usually 55-75%)
 12. "zonePercent": InZone% column (usually 30-70%, this is NOT InZoneWhiff%)
 13. "swgStrkPercent": SwStrk% column (usually 5-20%, small percentages)
@@ -76,8 +82,8 @@ KEY DISTINCTIONS:
 - Ground% and Fly% are the LAST two percentage columns (before xSLG/xwOBAcon if present)
 
 Return ONLY a valid JSON array. Use null for missing/"-" values.
-Example format:
-[{"pitchType":"Fastball (4S)","usage":0.562,"velocity":95.4,"spin":2304,"iVB":-14.4,"horzBrk":6.7,"extension":6.58,"relHt":5.6,"relSide":1.6,"vaa":-4.80,"strikePercent":72.3,"zonePercent":64,"swgStrkPercent":10.5,"whiffPercent":21,"chasePercent":25.5,"zoneWhiffPercent":18.3,"groundBallPercent":46.1,"flyBallPercent":27.3}]`
+Example format (note the NEGATIVE values for iVB and horzBrk):
+[{"pitchType":"Fastball (4S)","usage":0.562,"velocity":95.4,"spin":2304,"iVB":14.4,"horzBrk":6.7,"extension":6.58,"relHt":5.6,"relSide":1.6,"vaa":-4.80,"strikePercent":72.3,"zonePercent":64,"swgStrkPercent":10.5,"whiffPercent":21,"chasePercent":25.5,"zoneWhiffPercent":18.3,"groundBallPercent":46.1,"flyBallPercent":27.3},{"pitchType":"Cutter","usage":0.104,"velocity":87.9,"spin":2329,"iVB":-3.2,"horzBrk":-3.7,"extension":6.09,"relHt":5.6,"relSide":1.7,"vaa":-6.59,"strikePercent":71.1,"zonePercent":66,"swgStrkPercent":18.0,"whiffPercent":33,"chasePercent":27.9,"zoneWhiffPercent":24.1,"groundBallPercent":36.4,"flyBallPercent":27.3}]`
             }
           ]
         }]

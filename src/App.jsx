@@ -74,6 +74,7 @@ export default function PitchShapeVisualizer() {
   const [excludeBelow5, setExcludeBelow5] = useState(false);
   const [playerName, setPlayerName] = useState('');
   const [darkMode, setDarkMode] = useState(true);
+  const [handedness, setHandedness] = useState('RHP');
   const contentRef = useRef(null);
 
   const parseImageWithOCR = async (file) => {
@@ -417,6 +418,35 @@ export default function PitchShapeVisualizer() {
               />
             </div>
             
+            <div className="toggle-container">
+              <span 
+                style={{ 
+                  color: handedness === 'RHP' ? theme.text : theme.textMuted, 
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  fontWeight: handedness === 'RHP' ? 700 : 600
+                }}
+                onClick={() => setHandedness('RHP')}
+              >
+                RHP
+              </span>
+              <div 
+                className={`toggle-switch ${handedness === 'LHP' ? 'active' : ''}`}
+                onClick={() => setHandedness(handedness === 'RHP' ? 'LHP' : 'RHP')}
+              />
+              <span 
+                style={{ 
+                  color: handedness === 'LHP' ? theme.text : theme.textMuted, 
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  fontWeight: handedness === 'LHP' ? 700 : 600
+                }}
+                onClick={() => setHandedness('LHP')}
+              >
+                LHP
+              </span>
+            </div>
+            
             <div
               className={`upload-zone ${isDragging ? 'dragging' : ''}`}
               onDrop={handleDrop}
@@ -564,8 +594,8 @@ export default function PitchShapeVisualizer() {
 
                 {/* Release Point Plot */}
                 {(() => {
-                  const rpPlotSize = 340;
-                  const rpPadding = 50;
+                  const rpPlotSize = 400;
+                  const rpPadding = 55;
                   const rpInnerSize = rpPlotSize - rpPadding * 2;
                   const rpXRange = [-4, 4];
                   const rpYRange = [3, 7];
@@ -582,6 +612,10 @@ export default function PitchShapeVisualizer() {
                   const validExtPitches = pitchData.filter(p => p.extension != null);
                   const avgExtension = validExtPitches.length > 0 ? validExtPitches.reduce((sum, p) => sum + p.extension, 0) / validExtPitches.length : 0;
                   
+                  // League average release point based on handedness
+                  const leagueAvgRelSide = handedness === 'RHP' ? 1.88 : -2.08;
+                  const leagueAvgRelHt = handedness === 'RHP' ? 5.76 : 5.78;
+                  
                   return (
                     <svg width={rpPlotSize} height={rpPlotSize}>
                       <rect x={rpPadding} y={rpPadding} width={rpInnerSize} height={rpInnerSize} fill={theme.plotBg} />
@@ -594,8 +628,8 @@ export default function PitchShapeVisualizer() {
                         <line key={`rp-hgrid-${v}`} x1={rpPadding} y1={rpScaleY(v)} x2={rpPlotSize - rpPadding} y2={rpScaleY(v)} stroke={theme.gridLine} strokeWidth={1} />
                       ))}
                       
-                      {/* Center line at x=0 (white) */}
-                      <line x1={rpScaleX(0)} y1={rpPadding} x2={rpScaleX(0)} y2={rpPlotSize - rpPadding} stroke="rgba(255,255,255,0.4)" strokeWidth={1} />
+                      {/* Center line at x=0 (darker/more prominent) */}
+                      <line x1={rpScaleX(0)} y1={rpPadding} x2={rpScaleX(0)} y2={rpPlotSize - rpPadding} stroke={darkMode ? "rgba(255,255,255,0.7)" : "rgba(0,0,0,0.5)"} strokeWidth={2} />
                       
                       {/* Yellow crosshair lines */}
                       <line x1={rpScaleX(avgRelSide)} y1={rpPadding} x2={rpScaleX(avgRelSide)} y2={rpPlotSize - rpPadding} stroke="#EAB308" strokeWidth={1} />
@@ -605,37 +639,41 @@ export default function PitchShapeVisualizer() {
                       <text x={rpPadding + 10} y={rpPadding + 15} fill={theme.textMuted} fontSize="10" fontWeight="600">1B Side</text>
                       <text x={rpPlotSize - rpPadding - 45} y={rpPadding + 15} fill={theme.textMuted} fontSize="10" fontWeight="600">3B Side</text>
                       
-                      {/* Single green dot at intersection */}
+                      {/* League AVG marker */}
+                      <circle cx={rpScaleX(leagueAvgRelSide)} cy={rpScaleY(leagueAvgRelHt)} r={16} fill="none" stroke={theme.textMuted} strokeWidth={1.5} />
+                      <text x={rpScaleX(leagueAvgRelSide)} y={rpScaleY(leagueAvgRelHt) + 4} fill={theme.textMuted} fontSize="9" fontWeight="700" textAnchor="middle">AVG</text>
+                      
+                      {/* Single green dot at intersection (pitcher's actual release point) */}
                       <circle cx={rpScaleX(avgRelSide)} cy={rpScaleY(avgRelHt)} r={7} fill="#22C55E" stroke="#22C55E" strokeWidth={2} fillOpacity={0.9} />
                       
                       {/* Fixed yellow label - bottom left */}
-                      <rect x={rpPadding + 5} y={rpPlotSize - rpPadding - 52} width={110} height={20} fill="#EAB308" rx={3} />
-                      <text x={rpPadding + 60} y={rpPlotSize - rpPadding - 38} fill="#000" fontSize="11" fontWeight="600" textAnchor="middle">
+                      <rect x={rpPadding + 5} y={rpPlotSize - rpPadding - 52} width={115} height={20} fill="#EAB308" rx={3} />
+                      <text x={rpPadding + 62} y={rpPlotSize - rpPadding - 38} fill="#000" fontSize="11" fontWeight="600" textAnchor="middle">
                         Avg Release: {avgRelHt.toFixed(1)}
                       </text>
                       
                       {/* Extension banner below */}
-                      <rect x={rpPadding + 5} y={rpPlotSize - rpPadding - 28} width={110} height={20} fill="#EAB308" rx={3} />
-                      <text x={rpPadding + 60} y={rpPlotSize - rpPadding - 14} fill="#000" fontSize="11" fontWeight="600" textAnchor="middle">
+                      <rect x={rpPadding + 5} y={rpPlotSize - rpPadding - 28} width={115} height={20} fill="#EAB308" rx={3} />
+                      <text x={rpPadding + 62} y={rpPlotSize - rpPadding - 14} fill="#000" fontSize="11" fontWeight="600" textAnchor="middle">
                         Avg Ext: {avgExtension.toFixed(1)}
                       </text>
                       
                       {/* X-axis labels */}
                       {[-4, -2, 0, 2, 4].map(v => (
-                        <text key={`rp-xlabel-${v}`} x={rpScaleX(v)} y={rpPlotSize - rpPadding + 18} fill={theme.textMuted} fontSize="11" fontWeight="600" textAnchor="middle">{v}</text>
+                        <text key={`rp-xlabel-${v}`} x={rpScaleX(v)} y={rpPlotSize - rpPadding + 20} fill={theme.textMuted} fontSize="11" fontWeight="600" textAnchor="middle">{v}</text>
                       ))}
                       
                       {/* Y-axis labels */}
                       {[3, 4, 5, 6, 7].map(v => (
-                        <text key={`rp-ylabel-${v}`} x={rpPadding - 10} y={rpScaleY(v) + 4} fill={theme.textMuted} fontSize="11" fontWeight="600" textAnchor="end">{v}</text>
+                        <text key={`rp-ylabel-${v}`} x={rpPadding - 12} y={rpScaleY(v) + 4} fill={theme.textMuted} fontSize="11" fontWeight="600" textAnchor="end">{v}</text>
                       ))}
                       
                       {/* Axis titles */}
-                      <text x={rpPlotSize / 2} y={rpPlotSize - 5} fill={theme.text} fontSize="12" fontWeight="700" textAnchor="middle">Release Side (ft)</text>
-                      <text x={12} y={rpPlotSize / 2} fill={theme.text} fontSize="12" fontWeight="700" textAnchor="middle" transform={`rotate(-90, 12, ${rpPlotSize / 2})`}>Release Height (ft)</text>
+                      <text x={rpPlotSize / 2} y={rpPlotSize - 8} fill={theme.text} fontSize="12" fontWeight="700" textAnchor="middle">Release Side (ft)</text>
+                      <text x={14} y={rpPlotSize / 2} fill={theme.text} fontSize="12" fontWeight="700" textAnchor="middle" transform={`rotate(-90, 14, ${rpPlotSize / 2})`}>Release Height (ft)</text>
                       
                       {/* Title */}
-                      <text x={rpPlotSize / 2} y={25} fill={theme.text} fontSize="14" fontWeight="700" textAnchor="middle">Release Point</text>
+                      <text x={rpPlotSize / 2} y={28} fill={theme.text} fontSize="14" fontWeight="700" textAnchor="middle">Release Point</text>
                     </svg>
                   );
                 })()}
