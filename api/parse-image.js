@@ -18,64 +18,61 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'No image provided' });
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const googleCredsJson = process.env.GOOGLE_CLOUD_CREDENTIALS;
   
-  if (!apiKey) {
-    return res.status(500).json({ error: 'API key not configured' });
+  if (!anthropicKey) {
+    return res.status(500).json({ error: 'Anthropic API key not configured' });
+  }
+  
+  if (!googleCredsJson) {
+    return res.status(500).json({ error: 'Google Cloud credentials not configured' });
   }
 
   try {
-    // PASS 1: Identify the exact column headers and their positions
-    const pass1Response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 2000,
-        messages: [{
-          role: 'user',
-          content: [
-            {
-              type: 'image',
-              source: { type: 'base64', media_type: 'image/png', data: imageBase64 }
-            },
-            {
-              type: 'text',
-              text: `Look at this baseball statistics table. I need you to identify the EXACT column headers in order from left to right.
-
-List EVERY column header you see in the first/header row, numbered starting from 1. Be extremely precise - write exactly what each header says.
-
-Format your response as a numbered list like:
-1. Pitch Type - Ungrouped
-2. P%
-3. ERA
-...and so on for ALL columns.
-
-Only list the headers, nothing else.`
-            }
-          ]
-        }]
-      })
-    });
-
-    const pass1Data = await pass1Response.json();
+    // Parse Google credentials
+    const googleCreds = JSON.parse(googleCredsJson);
     
-    if (!pass1Response.ok) {
-      return res.status(pass1Response.status).json({ error: pass1Data.error?.message || 'Pass 1 failed' });
+    // Get Google access token using JWT
+    const accessToken = await getGoogleAccessToken(googleCreds);
+    
+    // STEP 1: Use Google Cloud Vision to extract text from image
+    const visionResponse = await fetch(
+      `https://vision.googleapis.com/v1/images:annotate`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          requests: [{
+            image: { content: imageBase64 },
+            features: [{ type: 'DOCUMENT_TEXT_DETECTION' }]
+          }]
+        })
+      }
+    );
+
+    const visionData = await visionResponse.json();
+    
+    if (!visionResponse.ok) {
+      console.error('Vision API error:', visionData);
+      return res.status(500).json({ error: 'Google Vision API failed: ' + (visionData.error?.message || 'Unknown error') });
     }
 
-    const columnList = pass1Data.content.map(item => item.text || '').join('');
+    const extractedText = visionData.responses?.[0]?.fullTextAnnotation?.text || '';
     
-    // PASS 2: Extract data using the identified column positions
-    const pass2Response = await fetch('https://api.anthropic.com/v1/messages', {
+    if (!extractedText) {
+      return res.status(400).json({ error: 'No text found in image' });
+    }
+
+    // STEP 2: Use Claude to parse the extracted text into structured data
+    const claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': apiKey,
+        'x-api-key': anthropicKey,
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
@@ -83,75 +80,74 @@ Only list the headers, nothing else.`
         max_tokens: 4000,
         messages: [{
           role: 'user',
-          content: [
-            {
-              type: 'image',
-              source: { type: 'base64', media_type: 'image/png', data: imageBase64 }
-            },
-            {
-              type: 'text',
-              text: `You previously identified these column headers in this table:
+          content: `Here is raw text extracted from a baseball statistics table via OCR. Parse it into structured JSON.
 
-${columnList}
+RAW TEXT:
+${extractedText}
 
-Now extract the data. For each pitch type row that has numeric data, read the value from EACH SPECIFIC COLUMN by its header name.
+This is a pitch statistics table. Extract data for each pitch type row.
 
-I need these specific columns mapped to these JSON fields:
-- "pitchType": from the Pitch Type column
-- "usage": from "P%" column (convert to decimal: 13.3% → 0.133)
-- "velocity": from "Vel" column
-- "spin": from "Spin" column
-- "iVB": from "iVB" column (PRESERVE NEGATIVE SIGNS)
-- "horzBrk": from "HorzBrk" column (PRESERVE NEGATIVE SIGNS)
-- "extension": from "Extension" column
-- "relHt": from "Rel Ht" column
-- "relSide": from "RelSide" column
-- "vaa": from "VertApprAngle" column (PRESERVE NEGATIVE SIGNS)
-- "strikePercent": from "Strike%" column
-- "zonePercent": from "InZone%" column (this is IN-ZONE RATE, NOT CSW%, NOT InZoneWhiff%)
-- "swgStrkPercent": from "SwStrk%" column
-- "whiffPercent": from "Whiff%" column
-- "chasePercent": from "Chase%" column
-- "zoneWhiffPercent": from "InZoneWhiff%" column
-- "groundBallPercent": from "Ground%" column
-- "flyBallPercent": from "Fly%" column
+The columns in these tables typically include (in roughly this order):
+Pitch Type, P%, ERA, xFIP, SIERA, SO%-BB%, P, Vel, Spin, SpinEff, iVB, HorzBrk, Extension, Rel Ht, RelSide, VertApprAngle, RelTilt, BrkTilt, Strike%, InZone%, CSW%, CallStrk%, SwStrk%, Whiff%, Chase%, InZoneWhiff%, PutAway%, BIP, Ground%, Fly%, xSLG, xwOBAcon
 
-CRITICAL: 
-- Find the EXACT column header first, then read the value directly below it for each row
-- "InZone%" and "InZoneWhiff%" are DIFFERENT columns - check the header carefully
-- "InZone%" is NOT "CSW%" - they are different columns
-- Use null for missing or "-" values
+CRITICAL COLUMN DISTINCTIONS:
+- "InZone%" is the zone rate (typically 30-70%) - how often the pitch is in the zone
+- "CSW%" is called strike + whiff rate - this is DIFFERENT from InZone%
+- "InZoneWhiff%" is the whiff rate on pitches IN the zone - DIFFERENT from both above
+- "SwStrk%" is swinging strike rate (typically 5-20%)
+- "Whiff%" is overall whiff rate (typically 15-50%)
 
-Return ONLY a valid JSON array, no other text.`
-            }
-          ]
+For each pitch type that has data, return a JSON object with:
+- "pitchType": string (e.g., "Fastball (4S)", "Slider", "Curveball")
+- "usage": decimal from P% (e.g., 13.3% becomes 0.133)
+- "velocity": number from Vel
+- "spin": number from Spin
+- "iVB": number from iVB (PRESERVE NEGATIVE SIGNS like -13.6)
+- "horzBrk": number from HorzBrk (PRESERVE NEGATIVE SIGNS like -18.7)
+- "extension": number from Extension
+- "relHt": number from Rel Ht
+- "relSide": number from RelSide
+- "vaa": number from VertApprAngle (PRESERVE NEGATIVE SIGNS like -4.13)
+- "strikePercent": number from Strike%
+- "zonePercent": number from InZone% (NOT CSW%!)
+- "swgStrkPercent": number from SwStrk%
+- "whiffPercent": number from Whiff%
+- "chasePercent": number from Chase%
+- "zoneWhiffPercent": number from InZoneWhiff%
+- "groundBallPercent": number from Ground%
+- "flyBallPercent": number from Fly%
+
+Use null for missing or "-" values.
+Only include pitch types that have numeric iVB and HorzBrk values.
+
+Return ONLY a valid JSON array, no explanation or markdown.`
         }]
       })
     });
 
-    const pass2Data = await pass2Response.json();
+    const claudeData = await claudeResponse.json();
     
-    if (!pass2Response.ok) {
-      return res.status(pass2Response.status).json({ error: pass2Data.error?.message || 'Pass 2 failed' });
+    if (!claudeResponse.ok) {
+      return res.status(claudeResponse.status).json({ error: claudeData.error?.message || 'Claude API failed' });
     }
 
-    const text = pass2Data.content.map(item => item.text || '').join('');
+    const text = claudeData.content.map(item => item.text || '').join('');
     
-    // Clean the response
+    // Clean and parse JSON
     let cleanJson = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     
     const jsonMatch = cleanJson.match(/\[[\s\S]*\]/);
     if (!jsonMatch) {
-      console.error('No JSON array found in response:', text);
-      return res.status(500).json({ error: 'Failed to parse response - no valid JSON found' });
+      console.error('No JSON array found in Claude response:', text);
+      return res.status(500).json({ error: 'Failed to parse response' });
     }
     
     let parsed;
     try {
       parsed = JSON.parse(jsonMatch[0]);
     } catch (parseErr) {
-      console.error('JSON parse error:', parseErr, 'Raw text:', jsonMatch[0]);
-      return res.status(500).json({ error: 'Failed to parse JSON response' });
+      console.error('JSON parse error:', parseErr);
+      return res.status(500).json({ error: 'Failed to parse JSON' });
     }
     
     const filtered = parsed.filter(p => p.usage >= usageThreshold && p.iVB !== null && p.horzBrk !== null);
@@ -161,4 +157,59 @@ Return ONLY a valid JSON array, no other text.`
     console.error('Error:', err);
     return res.status(500).json({ error: 'Failed to process image: ' + err.message });
   }
+}
+
+// Generate Google access token from service account credentials
+async function getGoogleAccessToken(creds) {
+  const now = Math.floor(Date.now() / 1000);
+  const expiry = now + 3600;
+  
+  // Create JWT header and claim
+  const header = {
+    alg: 'RS256',
+    typ: 'JWT'
+  };
+  
+  const claim = {
+    iss: creds.client_email,
+    scope: 'https://www.googleapis.com/auth/cloud-vision',
+    aud: 'https://oauth2.googleapis.com/token',
+    iat: now,
+    exp: expiry
+  };
+  
+  // Base64url encode
+  const base64url = (obj) => {
+    const json = JSON.stringify(obj);
+    const base64 = Buffer.from(json).toString('base64');
+    return base64.replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  };
+  
+  const headerEncoded = base64url(header);
+  const claimEncoded = base64url(claim);
+  const signatureInput = `${headerEncoded}.${claimEncoded}`;
+  
+  // Sign with private key
+  const crypto = await import('crypto');
+  const sign = crypto.createSign('RSA-SHA256');
+  sign.update(signatureInput);
+  const signature = sign.sign(creds.private_key, 'base64')
+    .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  
+  const jwt = `${signatureInput}.${signature}`;
+  
+  // Exchange JWT for access token
+  const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`
+  });
+  
+  const tokenData = await tokenResponse.json();
+  
+  if (!tokenResponse.ok) {
+    throw new Error('Failed to get Google access token: ' + (tokenData.error_description || tokenData.error));
+  }
+  
+  return tokenData.access_token;
 }
