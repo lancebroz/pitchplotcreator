@@ -30,8 +30,21 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Parse Google credentials
-    const googleCreds = JSON.parse(googleCredsJson);
+    // Parse Google credentials - handle escaped newlines
+    let googleCreds;
+    try {
+      // First try direct parse
+      googleCreds = JSON.parse(googleCredsJson);
+    } catch (e) {
+      // If that fails, try replacing escaped newlines
+      const fixedJson = googleCredsJson.replace(/\\\\n/g, '\\n');
+      googleCreds = JSON.parse(fixedJson);
+    }
+    
+    // Ensure private key has proper newlines
+    if (googleCreds.private_key) {
+      googleCreds.private_key = googleCreds.private_key.replace(/\\n/g, '\n');
+    }
     
     // Get Google access token using JWT
     const accessToken = await getGoogleAccessToken(googleCreds);
