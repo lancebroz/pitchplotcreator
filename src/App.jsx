@@ -16,9 +16,9 @@ const PITCH_COLORS = {
   'Curve': '#7DD3FC',
   'Change': '#22C55E',
   'Changeup': '#22C55E',
-  'Splitter': '#A855F7',
-  'Split': '#A855F7',
-  'Sweeper': '#FFD700',
+  'Splitter': '#14B8A6',
+  'Split': '#14B8A6',
+  'Sweeper': '#A855F7',
   'Slurve': '#1D3557',
   'Knuckle': '#6D6875',
   'Screwball': '#B5838D',
@@ -49,8 +49,8 @@ const getPitchColor = (pitchType) => {
   if (pt.includes('slider')) return '#EAB308';
   if (pt.includes('curve')) return '#7DD3FC';
   if (pt.includes('change')) return '#22C55E';
-  if (pt.includes('split')) return '#A855F7';
-  if (pt.includes('sweeper')) return '#FFD700';
+  if (pt.includes('split')) return '#14B8A6';
+  if (pt.includes('sweeper')) return '#A855F7';
   if (pt.includes('slurve')) return '#1D3557';
   if (pt.includes('knuckle')) return '#6D6875';
   if (pt.includes('screw')) return '#B5838D';
@@ -61,7 +61,9 @@ const getPitchColor = (pitchType) => {
 const renamePitchType = (pitchType) => {
   if (pitchType === 'Fastball (4S)') return 'Four-Seam';
   if (pitchType === 'Fastball (2S) / Sinker') return 'Sinker';
+  if (pitchType === 'Fastball (2S)/Sinker') return 'Sinker';
   if (pitchType === 'Fastball (2S)') return 'Sinker';
+  if (pitchType.toLowerCase().includes('2s') && pitchType.toLowerCase().includes('sinker')) return 'Sinker';
   return pitchType;
 };
 
