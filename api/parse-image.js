@@ -25,7 +25,53 @@ export default async function handler(req, res) {
   }
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    // PASS 1: Identify the exact column headers and their positions
+    const pass1Response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 2000,
+        messages: [{
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: { type: 'base64', media_type: 'image/png', data: imageBase64 }
+            },
+            {
+              type: 'text',
+              text: `Look at this baseball statistics table. I need you to identify the EXACT column headers in order from left to right.
+
+List EVERY column header you see in the first/header row, numbered starting from 1. Be extremely precise - write exactly what each header says.
+
+Format your response as a numbered list like:
+1. Pitch Type - Ungrouped
+2. P%
+3. ERA
+...and so on for ALL columns.
+
+Only list the headers, nothing else.`
+            }
+          ]
+        }]
+      })
+    });
+
+    const pass1Data = await pass1Response.json();
+    
+    if (!pass1Response.ok) {
+      return res.status(pass1Response.status).json({ error: pass1Data.error?.message || 'Pass 1 failed' });
+    }
+
+    const columnList = pass1Data.content.map(item => item.text || '').join('');
+    
+    // PASS 2: Extract data using the identified column positions
+    const pass2Response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -44,80 +90,56 @@ export default async function handler(req, res) {
             },
             {
               type: 'text',
-              text: `You are extracting data from a baseball statistics table. You must read EXACTLY what is in each column by matching the column header precisely.
+              text: `You previously identified these column headers in this table:
 
-STEP 1: Look at the header row. Find these EXACT column headers (they may appear in any order):
-- "Pitch Type" or "Pitch Type - Ungrouped" (pitch name)
-- "P%" (usage percentage)
-- "Vel" (velocity)
-- "Spin" (spin rate)
-- "iVB" (induced vertical break - CAN BE NEGATIVE)
-- "HorzBrk" (horizontal break - CAN BE NEGATIVE)
-- "Extension" (release extension)
-- "Rel Ht" (release height)
-- "RelSide" (release side)
-- "VertApprAngle" (approach angle - usually NEGATIVE)
-- "Strike%" (strike percentage)
-- "InZone%" (in-zone rate - NOT the same as InZoneWhiff%)
-- "SwStrk%" (swinging strike rate)
-- "Whiff%" (whiff rate)
-- "Chase%" (chase rate)
-- "InZoneWhiff%" (in-zone whiff rate - different column from InZone%)
-- "Ground%" (ground ball rate)
-- "Fly%" (fly ball rate)
+${columnList}
 
-IMPORTANT DISTINCTIONS - these are DIFFERENT columns:
-- "InZone%" is zone rate (how often pitches are in the zone) - typically 30-70%
-- "InZoneWhiff%" is in-zone whiff rate (whiffs on pitches in the zone) - typically 10-40%
-- "CSW%" is called strike + whiff rate - this is NOT InZone%
-- "SwStrk%" is swinging strike rate - typically 5-20%
+Now extract the data. For each pitch type row that has numeric data, read the value from EACH SPECIFIC COLUMN by its header name.
 
-STEP 2: For each pitch row, read the value DIRECTLY below each header. Do not skip columns or shift values.
+I need these specific columns mapped to these JSON fields:
+- "pitchType": from the Pitch Type column
+- "usage": from "P%" column (convert to decimal: 13.3% → 0.133)
+- "velocity": from "Vel" column
+- "spin": from "Spin" column
+- "iVB": from "iVB" column (PRESERVE NEGATIVE SIGNS)
+- "horzBrk": from "HorzBrk" column (PRESERVE NEGATIVE SIGNS)
+- "extension": from "Extension" column
+- "relHt": from "Rel Ht" column
+- "relSide": from "RelSide" column
+- "vaa": from "VertApprAngle" column (PRESERVE NEGATIVE SIGNS)
+- "strikePercent": from "Strike%" column
+- "zonePercent": from "InZone%" column (this is IN-ZONE RATE, NOT CSW%, NOT InZoneWhiff%)
+- "swgStrkPercent": from "SwStrk%" column
+- "whiffPercent": from "Whiff%" column
+- "chasePercent": from "Chase%" column
+- "zoneWhiffPercent": from "InZoneWhiff%" column
+- "groundBallPercent": from "Ground%" column
+- "flyBallPercent": from "Fly%" column
 
-STEP 3: Return a JSON array. PRESERVE NEGATIVE SIGNS for iVB, HorzBrk, and VertApprAngle.
+CRITICAL: 
+- Find the EXACT column header first, then read the value directly below it for each row
+- "InZone%" and "InZoneWhiff%" are DIFFERENT columns - check the header carefully
+- "InZone%" is NOT "CSW%" - they are different columns
+- Use null for missing or "-" values
 
-Required format:
-[{
-  "pitchType": "string from Pitch Type column",
-  "usage": decimal (P% divided by 100, e.g. 13.3% = 0.133),
-  "velocity": number from Vel,
-  "spin": number from Spin,
-  "iVB": number from iVB (KEEP NEGATIVE SIGN if present),
-  "horzBrk": number from HorzBrk (KEEP NEGATIVE SIGN if present),
-  "extension": number from Extension,
-  "relHt": number from Rel Ht,
-  "relSide": number from RelSide,
-  "vaa": number from VertApprAngle (KEEP NEGATIVE SIGN),
-  "strikePercent": number from Strike%,
-  "zonePercent": number from InZone% (NOT CSW%, NOT InZoneWhiff%),
-  "swgStrkPercent": number from SwStrk%,
-  "whiffPercent": number from Whiff%,
-  "chasePercent": number from Chase%,
-  "zoneWhiffPercent": number from InZoneWhiff%,
-  "groundBallPercent": number from Ground%,
-  "flyBallPercent": number from Fly%
-}]
-
-Use null for missing/"-" values. Only include rows with numeric iVB and HorzBrk.
-Return ONLY the JSON array, no other text.`
+Return ONLY a valid JSON array, no other text.`
             }
           ]
         }]
       })
     });
 
-    const data = await response.json();
+    const pass2Data = await pass2Response.json();
     
-    if (!response.ok) {
-      return res.status(response.status).json({ error: data.error?.message || 'API request failed' });
+    if (!pass2Response.ok) {
+      return res.status(pass2Response.status).json({ error: pass2Data.error?.message || 'Pass 2 failed' });
     }
 
-    const text = data.content.map(item => item.text || '').join('');
+    const text = pass2Data.content.map(item => item.text || '').join('');
     
-    // Clean the response - remove markdown formatting if present
+    // Clean the response
     let cleanJson = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     
-    // Try to find JSON array in the response
     const jsonMatch = cleanJson.match(/\[[\s\S]*\]/);
     if (!jsonMatch) {
       console.error('No JSON array found in response:', text);
