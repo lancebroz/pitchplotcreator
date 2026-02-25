@@ -44,46 +44,62 @@ export default async function handler(req, res) {
             },
             {
               type: 'text',
-              text: `Extract data from this baseball statistics table. 
+              text: `You are extracting data from a baseball statistics table. You must read EXACTLY what is in each column by matching the column header precisely.
 
-IMPORTANT: Read the column headers from LEFT to RIGHT carefully. The table has many percentage columns that look similar - pay close attention to the EXACT header name for each column.
+STEP 1: Look at the header row. Find these EXACT column headers (they may appear in any order):
+- "Pitch Type" or "Pitch Type - Ungrouped" (pitch name)
+- "P%" (usage percentage)
+- "Vel" (velocity)
+- "Spin" (spin rate)
+- "iVB" (induced vertical break - CAN BE NEGATIVE)
+- "HorzBrk" (horizontal break - CAN BE NEGATIVE)
+- "Extension" (release extension)
+- "Rel Ht" (release height)
+- "RelSide" (release side)
+- "VertApprAngle" (approach angle - usually NEGATIVE)
+- "Strike%" (strike percentage)
+- "InZone%" (in-zone rate - NOT the same as InZoneWhiff%)
+- "SwStrk%" (swinging strike rate)
+- "Whiff%" (whiff rate)
+- "Chase%" (chase rate)
+- "InZoneWhiff%" (in-zone whiff rate - different column from InZone%)
+- "Ground%" (ground ball rate)
+- "Fly%" (fly ball rate)
 
-CRITICAL - NEGATIVE NUMBERS: Many values in this table are NEGATIVE (have a minus sign). You MUST preserve the negative sign for these values:
-- iVB can be negative (e.g., -1.1, -14.4)
-- HorzBrk can be negative (e.g., -3.7, -14.2, -7.7)
-- VertApprAngle is usually negative (e.g., -4.80, -6.59, -8.05)
-DO NOT drop the minus signs! A value of -3.7 is very different from 3.7.
+IMPORTANT DISTINCTIONS - these are DIFFERENT columns:
+- "InZone%" is zone rate (how often pitches are in the zone) - typically 30-70%
+- "InZoneWhiff%" is in-zone whiff rate (whiffs on pitches in the zone) - typically 10-40%
+- "CSW%" is called strike + whiff rate - this is NOT InZone%
+- "SwStrk%" is swinging strike rate - typically 5-20%
 
-For each pitch type row that has numeric iVB and HorzBrk values, extract:
+STEP 2: For each pitch row, read the value DIRECTLY below each header. Do not skip columns or shift values.
 
-1. "pitchType": The pitch name (first column)
-2. "usage": P% value as decimal (e.g., 56.2% becomes 0.562)
-3. "velocity": Vel column value
-4. "spin": Spin column value  
-5. "iVB": iVB column value (CAN BE NEGATIVE - preserve the minus sign!)
-6. "horzBrk": HorzBrk column value (CAN BE NEGATIVE - preserve the minus sign!)
-7. "extension": Extension column value
-8. "relHt": Rel Ht column value
-9. "relSide": RelSide column value
-10. "vaa": VertApprAngle column value (usually negative like -4.80)
-11. "strikePercent": Strike% column (usually 55-75%)
-12. "zonePercent": InZone% column (usually 30-70%, this is NOT InZoneWhiff%)
-13. "swgStrkPercent": SwStrk% column (usually 5-20%, small percentages)
-14. "whiffPercent": Whiff% column (usually 15-40%)
-15. "chasePercent": Chase% column (usually 20-50%)
-16. "zoneWhiffPercent": InZoneWhiff% column (usually 15-45%)
-17. "groundBallPercent": Ground% column (usually 30-60%, this is near the END of the table)
-18. "flyBallPercent": Fly% column (usually 15-50%, this is the LAST percentage column before xSLG)
+STEP 3: Return a JSON array. PRESERVE NEGATIVE SIGNS for iVB, HorzBrk, and VertApprAngle.
 
-KEY DISTINCTIONS:
-- InZone% comes BEFORE CSW% and is typically 30-70%
-- InZoneWhiff% comes AFTER Chase% and is typically 15-45%  
-- SwStrk% (swinging strike) is typically 5-20% - much lower than Whiff%
-- Ground% and Fly% are the LAST two percentage columns (before xSLG/xwOBAcon if present)
+Required format:
+[{
+  "pitchType": "string from Pitch Type column",
+  "usage": decimal (P% divided by 100, e.g. 13.3% = 0.133),
+  "velocity": number from Vel,
+  "spin": number from Spin,
+  "iVB": number from iVB (KEEP NEGATIVE SIGN if present),
+  "horzBrk": number from HorzBrk (KEEP NEGATIVE SIGN if present),
+  "extension": number from Extension,
+  "relHt": number from Rel Ht,
+  "relSide": number from RelSide,
+  "vaa": number from VertApprAngle (KEEP NEGATIVE SIGN),
+  "strikePercent": number from Strike%,
+  "zonePercent": number from InZone% (NOT CSW%, NOT InZoneWhiff%),
+  "swgStrkPercent": number from SwStrk%,
+  "whiffPercent": number from Whiff%,
+  "chasePercent": number from Chase%,
+  "zoneWhiffPercent": number from InZoneWhiff%,
+  "groundBallPercent": number from Ground%,
+  "flyBallPercent": number from Fly%
+}]
 
-Return ONLY a valid JSON array. Use null for missing/"-" values.
-Example format (note the NEGATIVE values for iVB and horzBrk):
-[{"pitchType":"Fastball (4S)","usage":0.562,"velocity":95.4,"spin":2304,"iVB":14.4,"horzBrk":6.7,"extension":6.58,"relHt":5.6,"relSide":1.6,"vaa":-4.80,"strikePercent":72.3,"zonePercent":64,"swgStrkPercent":10.5,"whiffPercent":21,"chasePercent":25.5,"zoneWhiffPercent":18.3,"groundBallPercent":46.1,"flyBallPercent":27.3},{"pitchType":"Cutter","usage":0.104,"velocity":87.9,"spin":2329,"iVB":-3.2,"horzBrk":-3.7,"extension":6.09,"relHt":5.6,"relSide":1.7,"vaa":-6.59,"strikePercent":71.1,"zonePercent":66,"swgStrkPercent":18.0,"whiffPercent":33,"chasePercent":27.9,"zoneWhiffPercent":24.1,"groundBallPercent":36.4,"flyBallPercent":27.3}]`
+Use null for missing/"-" values. Only include rows with numeric iVB and HorzBrk.
+Return ONLY the JSON array, no other text.`
             }
           ]
         }]

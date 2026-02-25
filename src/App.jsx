@@ -608,9 +608,9 @@ export default function PitchShapeVisualizer() {
                   const avgRelSide = validPitches.length > 0 ? validPitches.reduce((sum, p) => sum + p.relSide, 0) / validPitches.length : 0;
                   const avgRelHt = validPitches.length > 0 ? validPitches.reduce((sum, p) => sum + p.relHt, 0) / validPitches.length : 5;
                   
-                  // Calculate average extension
-                  const validExtPitches = pitchData.filter(p => p.extension != null);
-                  const avgExtension = validExtPitches.length > 0 ? validExtPitches.reduce((sum, p) => sum + p.extension, 0) / validExtPitches.length : 0;
+                  // Get first available extension value (typically the fastball)
+                  const firstExtPitch = pitchData.find(p => p.extension != null);
+                  const firstExtension = firstExtPitch ? firstExtPitch.extension : 0;
                   
                   // League average release point based on handedness
                   const leagueAvgRelSide = handedness === 'RHP' ? 1.88 : -2.08;
@@ -653,9 +653,9 @@ export default function PitchShapeVisualizer() {
                       </text>
                       
                       {/* Extension banner below */}
-                      <rect x={rpPadding + 5} y={rpPlotSize - rpPadding - 28} width={115} height={20} fill="#EAB308" rx={3} />
-                      <text x={rpPadding + 62} y={rpPlotSize - rpPadding - 14} fill="#000" fontSize="11" fontWeight="600" textAnchor="middle">
-                        Extension: {avgExtension.toFixed(1)}
+                      <rect x={rpPadding + 5} y={rpPlotSize - rpPadding - 28} width={140} height={20} fill="#EAB308" rx={3} />
+                      <text x={rpPadding + 75} y={rpPlotSize - rpPadding - 14} fill="#000" fontSize="11" fontWeight="600" textAnchor="middle">
+                        Fastball Extension: {firstExtension.toFixed(1)}
                       </text>
                       
                       {/* X-axis labels */}
