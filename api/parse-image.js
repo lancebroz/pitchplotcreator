@@ -19,69 +19,14 @@ export default async function handler(req, res) {
   }
 
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  const googleCredsJson = process.env.GOOGLE_CLOUD_CREDENTIALS;
   
   if (!anthropicKey) {
     return res.status(500).json({ error: 'Anthropic API key not configured' });
   }
-  
-  if (!googleCredsJson) {
-    return res.status(500).json({ error: 'Google Cloud credentials not configured' });
-  }
 
   try {
-    // Parse Google credentials - handle escaped newlines
-    let googleCreds;
-    try {
-      // First try direct parse
-      googleCreds = JSON.parse(googleCredsJson);
-    } catch (e) {
-      // If that fails, try replacing escaped newlines
-      const fixedJson = googleCredsJson.replace(/\\\\n/g, '\\n');
-      googleCreds = JSON.parse(fixedJson);
-    }
-    
-    // Ensure private key has proper newlines
-    if (googleCreds.private_key) {
-      googleCreds.private_key = googleCreds.private_key.replace(/\\n/g, '\n');
-    }
-    
-    // Get Google access token using JWT
-    const accessToken = await getGoogleAccessToken(googleCreds);
-    
-    // STEP 1: Use Google Cloud Vision to extract text from image
-    const visionResponse = await fetch(
-      `https://vision.googleapis.com/v1/images:annotate`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          requests: [{
-            image: { content: imageBase64 },
-            features: [{ type: 'DOCUMENT_TEXT_DETECTION' }]
-          }]
-        })
-      }
-    );
-
-    const visionData = await visionResponse.json();
-    
-    if (!visionResponse.ok) {
-      console.error('Vision API error:', visionData);
-      return res.status(500).json({ error: 'Google Vision API failed: ' + (visionData.error?.message || 'Unknown error') });
-    }
-
-    const extractedText = visionData.responses?.[0]?.fullTextAnnotation?.text || '';
-    
-    if (!extractedText) {
-      return res.status(400).json({ error: 'No text found in image' });
-    }
-
-    // STEP 2: Use Claude to parse the extracted text into structured data
-    const claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
+    // Use Claude Vision directly to read and parse the table
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -93,71 +38,66 @@ export default async function handler(req, res) {
         max_tokens: 4000,
         messages: [{
           role: 'user',
-          content: `Here is raw text extracted from a baseball statistics table via OCR. Parse it into structured JSON.
+          content: [
+            {
+              type: 'image',
+              source: { type: 'base64', media_type: 'image/png', data: imageBase64 }
+            },
+            {
+              type: 'text',
+              text: `Look at this baseball statistics table image. I need you to extract data by visually reading each column.
 
-RAW TEXT:
-${extractedText}
+For each pitch type row, look at the column header and read the value DIRECTLY below it in that row. Trace your eye down from each header to get the correct value.
 
-This is a pitch statistics table. The columns typically appear in this order:
-Pitch Type, P%, ERA, xFIP, SIERA, SO%-BB%, P, Vel, Spin, SpinEff, iVB, HorzBrk, Extension, Rel Ht, RelSide, VertApprAngle, VertRelAngle, RelTilt, BrkTilt, Strike%, InZone%, SwStrk%, Whiff%, Chase%, InZoneWhiff%, BIP, Ground%, Fly%
+Extract these fields for each pitch:
+- "pitchType": from Pitch Type column
+- "usage": from P% column (convert to decimal: 54.7% = 0.547)
+- "velocity": from Vel column
+- "spin": from Spin column
+- "iVB": from iVB column (PRESERVE NEGATIVE SIGNS like -4.1)
+- "horzBrk": from HorzBrk column (PRESERVE NEGATIVE SIGNS like -2.6)
+- "extension": from Extension column
+- "relHt": from Rel Ht column
+- "relSide": from RelSide column
+- "vaa": from VertApprAngle column (PRESERVE NEGATIVE SIGNS like -4.40)
+- "strikePercent": from Strike% column
+- "zonePercent": from InZone% column (this is zone rate, typically 40-60%)
+- "swgStrkPercent": from SwStrk% column (swinging strike rate, typically 8-20%)
+- "whiffPercent": from Whiff% column (typically 20-40%)
+- "chasePercent": from Chase% column (typically 20-35%)
+- "zoneWhiffPercent": from InZoneWhiff% column (typically 10-30%, comes AFTER Chase%)
+- "groundBallPercent": from Ground% column (typically 25-55%, near end of table)
+- "flyBallPercent": from Fly% column (typically 20-45%, last % column before xSLG)
 
-CRITICAL - Read these columns correctly:
-- "InZone%" is zone rate (typically 40-60%) - NOT the same as InZoneWhiff%
-- "SwStrk%" is swinging strike rate (typically 8-20%)
-- "Whiff%" is whiff rate (typically 20-40%)
-- "Chase%" is chase rate (typically 20-35%)
-- "InZoneWhiff%" is in-zone whiff rate (typically 10-30%) - comes AFTER Chase%
-- "Ground%" is ground ball rate (typically 30-55%) - comes AFTER BIP
-- "Fly%" is fly ball rate (typically 20-40%) - comes AFTER Ground%
+CRITICAL INSTRUCTIONS:
+1. For each column, visually trace DOWN from the header to find the correct value
+2. InZone% and InZoneWhiff% are DIFFERENT columns - read both
+3. PRESERVE all negative signs for iVB, HorzBrk, and vaa
+4. Use null for missing or "-" values
+5. Only include rows that have numeric iVB and HorzBrk values
+6. Percentages should be numbers only (32% becomes 32)
 
-For EACH pitch type row, extract ALL of these fields:
-{
-  "pitchType": string (e.g., "Fastball (4S)", "Slider"),
-  "usage": decimal from P% (54.7% = 0.547),
-  "velocity": number from Vel,
-  "spin": number from Spin,
-  "iVB": number from iVB (KEEP NEGATIVE SIGNS),
-  "horzBrk": number from HorzBrk (KEEP NEGATIVE SIGNS),
-  "extension": number from Extension,
-  "relHt": number from Rel Ht,
-  "relSide": number from RelSide,
-  "vaa": number from VertApprAngle (KEEP NEGATIVE SIGNS),
-  "strikePercent": number from Strike%,
-  "zonePercent": number from InZone%,
-  "swgStrkPercent": number from SwStrk%,
-  "whiffPercent": number from Whiff%,
-  "chasePercent": number from Chase%,
-  "zoneWhiffPercent": number from InZoneWhiff%,
-  "groundBallPercent": number from Ground%,
-  "flyBallPercent": number from Fly%
-}
-
-IMPORTANT:
-- Extract ALL fields for EVERY pitch row - do not skip any fields
-- If a value appears as "-" or is missing, use null
-- Percentages should be numbers only (32% becomes 32, not "32%")
-- PRESERVE negative signs for iVB, HorzBrk, and vaa
-- Only include rows that have numeric iVB and HorzBrk values
-
-Return ONLY a valid JSON array with no explanation.`
+Return ONLY a valid JSON array, no explanation or markdown formatting.`
+            }
+          ]
         }]
       })
     });
 
-    const claudeData = await claudeResponse.json();
+    const data = await response.json();
     
-    if (!claudeResponse.ok) {
-      return res.status(claudeResponse.status).json({ error: claudeData.error?.message || 'Claude API failed' });
+    if (!response.ok) {
+      return res.status(response.status).json({ error: data.error?.message || 'API request failed' });
     }
 
-    const text = claudeData.content.map(item => item.text || '').join('');
+    const text = data.content.map(item => item.text || '').join('');
     
     // Clean and parse JSON
     let cleanJson = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     
     const jsonMatch = cleanJson.match(/\[[\s\S]*\]/);
     if (!jsonMatch) {
-      console.error('No JSON array found in Claude response:', text);
+      console.error('No JSON array found in response:', text);
       return res.status(500).json({ error: 'Failed to parse response' });
     }
     
@@ -176,59 +116,4 @@ Return ONLY a valid JSON array with no explanation.`
     console.error('Error:', err);
     return res.status(500).json({ error: 'Failed to process image: ' + err.message });
   }
-}
-
-// Generate Google access token from service account credentials
-async function getGoogleAccessToken(creds) {
-  const now = Math.floor(Date.now() / 1000);
-  const expiry = now + 3600;
-  
-  // Create JWT header and claim
-  const header = {
-    alg: 'RS256',
-    typ: 'JWT'
-  };
-  
-  const claim = {
-    iss: creds.client_email,
-    scope: 'https://www.googleapis.com/auth/cloud-vision',
-    aud: 'https://oauth2.googleapis.com/token',
-    iat: now,
-    exp: expiry
-  };
-  
-  // Base64url encode
-  const base64url = (obj) => {
-    const json = JSON.stringify(obj);
-    const base64 = Buffer.from(json).toString('base64');
-    return base64.replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-  };
-  
-  const headerEncoded = base64url(header);
-  const claimEncoded = base64url(claim);
-  const signatureInput = `${headerEncoded}.${claimEncoded}`;
-  
-  // Sign with private key
-  const crypto = await import('crypto');
-  const sign = crypto.createSign('RSA-SHA256');
-  sign.update(signatureInput);
-  const signature = sign.sign(creds.private_key, 'base64')
-    .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-  
-  const jwt = `${signatureInput}.${signature}`;
-  
-  // Exchange JWT for access token
-  const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`
-  });
-  
-  const tokenData = await tokenResponse.json();
-  
-  if (!tokenResponse.ok) {
-    throw new Error('Failed to get Google access token: ' + (tokenData.error_description || tokenData.error));
-  }
-  
-  return tokenData.access_token;
 }
