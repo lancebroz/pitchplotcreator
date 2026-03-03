@@ -98,42 +98,48 @@ export default async function handler(req, res) {
 RAW TEXT:
 ${extractedText}
 
-This is a pitch statistics table. Extract data for each pitch type row.
+This is a pitch statistics table. The columns typically appear in this order:
+Pitch Type, P%, ERA, xFIP, SIERA, SO%-BB%, P, Vel, Spin, SpinEff, iVB, HorzBrk, Extension, Rel Ht, RelSide, VertApprAngle, VertRelAngle, RelTilt, BrkTilt, Strike%, InZone%, SwStrk%, Whiff%, Chase%, InZoneWhiff%, BIP, Ground%, Fly%
 
-The columns in these tables typically include (in roughly this order):
-Pitch Type, P%, ERA, xFIP, SIERA, SO%-BB%, P, Vel, Spin, SpinEff, iVB, HorzBrk, Extension, Rel Ht, RelSide, VertApprAngle, RelTilt, BrkTilt, Strike%, InZone%, CSW%, CallStrk%, SwStrk%, Whiff%, Chase%, InZoneWhiff%, PutAway%, BIP, Ground%, Fly%, xSLG, xwOBAcon
+CRITICAL - Read these columns correctly:
+- "InZone%" is zone rate (typically 40-60%) - NOT the same as InZoneWhiff%
+- "SwStrk%" is swinging strike rate (typically 8-20%)
+- "Whiff%" is whiff rate (typically 20-40%)
+- "Chase%" is chase rate (typically 20-35%)
+- "InZoneWhiff%" is in-zone whiff rate (typically 10-30%) - comes AFTER Chase%
+- "Ground%" is ground ball rate (typically 30-55%) - comes AFTER BIP
+- "Fly%" is fly ball rate (typically 20-40%) - comes AFTER Ground%
 
-CRITICAL COLUMN DISTINCTIONS:
-- "InZone%" is the zone rate (typically 30-70%) - how often the pitch is in the zone
-- "CSW%" is called strike + whiff rate - this is DIFFERENT from InZone%
-- "InZoneWhiff%" is the whiff rate on pitches IN the zone - DIFFERENT from both above
-- "SwStrk%" is swinging strike rate (typically 5-20%)
-- "Whiff%" is overall whiff rate (typically 15-50%)
+For EACH pitch type row, extract ALL of these fields:
+{
+  "pitchType": string (e.g., "Fastball (4S)", "Slider"),
+  "usage": decimal from P% (54.7% = 0.547),
+  "velocity": number from Vel,
+  "spin": number from Spin,
+  "iVB": number from iVB (KEEP NEGATIVE SIGNS),
+  "horzBrk": number from HorzBrk (KEEP NEGATIVE SIGNS),
+  "extension": number from Extension,
+  "relHt": number from Rel Ht,
+  "relSide": number from RelSide,
+  "vaa": number from VertApprAngle (KEEP NEGATIVE SIGNS),
+  "strikePercent": number from Strike%,
+  "zonePercent": number from InZone%,
+  "swgStrkPercent": number from SwStrk%,
+  "whiffPercent": number from Whiff%,
+  "chasePercent": number from Chase%,
+  "zoneWhiffPercent": number from InZoneWhiff%,
+  "groundBallPercent": number from Ground%,
+  "flyBallPercent": number from Fly%
+}
 
-For each pitch type that has data, return a JSON object with:
-- "pitchType": string (e.g., "Fastball (4S)", "Slider", "Curveball")
-- "usage": decimal from P% (e.g., 13.3% becomes 0.133)
-- "velocity": number from Vel
-- "spin": number from Spin
-- "iVB": number from iVB (PRESERVE NEGATIVE SIGNS like -13.6)
-- "horzBrk": number from HorzBrk (PRESERVE NEGATIVE SIGNS like -18.7)
-- "extension": number from Extension
-- "relHt": number from Rel Ht
-- "relSide": number from RelSide
-- "vaa": number from VertApprAngle (PRESERVE NEGATIVE SIGNS like -4.13)
-- "strikePercent": number from Strike%
-- "zonePercent": number from InZone% (NOT CSW%!)
-- "swgStrkPercent": number from SwStrk%
-- "whiffPercent": number from Whiff%
-- "chasePercent": number from Chase%
-- "zoneWhiffPercent": number from InZoneWhiff%
-- "groundBallPercent": number from Ground%
-- "flyBallPercent": number from Fly%
+IMPORTANT:
+- Extract ALL fields for EVERY pitch row - do not skip any fields
+- If a value appears as "-" or is missing, use null
+- Percentages should be numbers only (32% becomes 32, not "32%")
+- PRESERVE negative signs for iVB, HorzBrk, and vaa
+- Only include rows that have numeric iVB and HorzBrk values
 
-Use null for missing or "-" values.
-Only include pitch types that have numeric iVB and HorzBrk values.
-
-Return ONLY a valid JSON array, no explanation or markdown.`
+Return ONLY a valid JSON array with no explanation.`
         }]
       })
     });

@@ -7,6 +7,7 @@ const PITCH_COLORS = {
   '4-Seam': '#E63946',
   'Fastball (2S)': '#F4722B',
   'Fastball (2S) / Sinker': '#F4722B',
+  'Fastball (2S)/Sinker': '#F4722B',
   'Sinker': '#F4722B',
   'Two-Seam': '#F4722B',
   '2-Seam': '#F4722B',
